@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <stdint.h>
+#include <LiquidCrystal.h>
 
 
 /// Pin Definitions
@@ -40,8 +41,16 @@ uint16_t speedInput = 0;
 uint8_t speedOutput = 0;
 uint8_t rotationCount = 0;
 uint8_t speedSetting = 0;
+uint8_t cwTriggerCount = 0;
+uint8_t ccwTriggerCount = 0;
+const uint8_t directionTriggerThreshold = 50;
+const uint16_t encoderResolution = 1440;
+uint8_t encoderCount = 0;
+uint16_t encoderCountLimit = 0;
 
 // Store previous speedSetting for change detection
+
+
 uint8_t prevSpeedSetting = 0;
 
 // Filtered rotation count (moving average)
@@ -56,18 +65,18 @@ uint8_t prevFilteredRotationCount = 0;
 // Added variables for sensor inputs
 uint16_t transducerInput = 0;
 uint16_t rotationsinput = 0;
-uint16_t directionCWInput = 0;
-uint16_t directionCCWInput = 0;
+bool directionCWInput = 0;
+bool directionCCWInput = 0;
 
 
 
-
-
+// Encoder interrupt service routine
+void IRAM_ATTR encoderISR() {
+  encoderCount++;
+}
 
 
 // put function declarations here:
-int myFunction(int, int);
-
 void startMotor();
 void stopMotor();
 
@@ -77,6 +86,7 @@ void displaySpeed();
 void displayRotations();
 
 void setup() {
+
   // put your setup code here, to run once:
   // Pin Mode Definitions
   pinMode(speed_pot_input, INPUT);
@@ -106,8 +116,8 @@ void setup() {
   digitalWrite(LCD_K, 0);
   digitalWrite(LCD_A, 1);
 
-  // attach encoder interrupt
-
+  // Attach interrupt to encoder_a_input pin
+  attachInterrupt(digitalPinToInterrupt(encoder_a_input), encoderISR, RISING);
 
 }
 
@@ -137,7 +147,7 @@ void loop() {
 
   /// speed filtering
   // reduces the speed input to one of three possibilities
-  speedSetting = speedInput/1365;
+  speedSetting = speedInput/1370;
   // Moving average filter for rotationCount
   // beta = 0.5
   float beta = 0.5f;
@@ -169,6 +179,47 @@ void loop() {
   }
 
 
+  if (filteredRotationCount == 0){
+    // manual mode
+  } else {
+
+    if (!onHold) {
+
+      // check if in no direction position
+      if (!direction_switch_cw_input && !direction_switch_ccw_input) {
+        // reset direction trigger count
+        cwTriggerCount = 0;
+        ccwTriggerCount = 0;
+      } else if (direction_switch_cw_input && !direction_switch_ccw_input) {
+        // increment cw trigger count
+        // reset ccw trigger count
+        // set direction to true
+        cwTriggerCount++;
+        ccwTriggerCount = 0;
+        direction = true;
+      } else if (!direction_switch_cw_input && direction_switch_ccw_input) {
+        // increment ccw trigger count
+        // reset cw trigger count
+        // set direction to false
+        ccwTriggerCount++;
+        cwTriggerCount = 0;
+        direction = false;
+      }
+
+      // if a direction trigger counter has passed the threshold, start the motor
+      if ((cwTriggerCount >= directionTriggerThreshold) || (ccwTriggerCount >= directionTriggerThreshold)) {
+        // move the motor the set number of rotations
+        // set motor to on hold so it cannot move again until this move is completed
+        spinSetRotations();
+        onHold = true;
+      }
+    }
+  }
+
+
+
+
+
 
 
 
@@ -177,9 +228,7 @@ void loop() {
 }
 
 // put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
-}
+
 
 
 
@@ -204,3 +253,20 @@ void stopMotor() {
   analogWrite(motor_controller_EN, 0);
   isMotorRunning = false;
 }
+
+
+void spinSetRotations() {
+  if (!onHold) {
+    encoderCountLimit = filteredRotationCount*encoderResolution;
+    startMotor();
+    encoderCount = 0;
+    while(encoderCount < encoderCountLimit) {
+      //displayTorque();
+    }
+    stopMotor();
+  }
+}
+
+
+
+

@@ -32,8 +32,32 @@ const uint8_t LCD_DB2 = 4;
 const uint8_t LCD_DB1 = 2;
 const uint8_t LCD_DB0 = 15;
 
+/// Global Variable Definitions
+bool isMotorRunning = false;
+bool direction = true;
+bool onHold = true;
+uint16_t speedInput = 0;
+uint8_t speedOutput = 0;
+uint8_t rotationCount = 0;
+uint8_t speedSetting = 0;
 
+// Store previous speedSetting for change detection
+uint8_t prevSpeedSetting = 0;
 
+// Filtered rotation count (moving average)
+uint8_t filteredRotationCount = 0;
+
+// Filtered speed setting (moving average)
+uint8_t filteredSpeed = 0;
+
+// Store previous filtered value for change detection
+uint8_t prevFilteredRotationCount = 0;
+
+// Added variables for sensor inputs
+uint16_t transducerInput = 0;
+uint16_t rotationsinput = 0;
+uint16_t directionCWInput = 0;
+uint16_t directionCCWInput = 0;
 
 
 
@@ -44,16 +68,139 @@ const uint8_t LCD_DB0 = 15;
 // put function declarations here:
 int myFunction(int, int);
 
+void startMotor();
+void stopMotor();
+
+void spinSetRotations();
+void displayTorque();
+void displaySpeed();
+void displayRotations();
+
 void setup() {
   // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+  // Pin Mode Definitions
+  pinMode(speed_pot_input, INPUT);
+  pinMode(encoder_a_input, INPUT);
+  pinMode(motor_controller_In2, OUTPUT);
+  pinMode(motor_controller_In1, OUTPUT);
+  pinMode(motor_controller_EN, OUTPUT);
+  pinMode(LCD_E, OUTPUT);
+  pinMode(LCD_RW, OUTPUT);
+  pinMode(LCD_RS, OUTPUT);
+  pinMode(transducer_input, INPUT_PULLDOWN);
+  pinMode(rotations_pot_input, INPUT);
+  pinMode(direction_switch_cw_input, INPUT_PULLDOWN);
+  pinMode(direction_switch_ccw_input, INPUT_PULLDOWN);
+  pinMode(LCD_K, OUTPUT);
+  pinMode(encoder_b_input, INPUT);
+  pinMode(LCD_A, OUTPUT);
+  pinMode(LCD_DB7, OUTPUT);
+  pinMode(LCD_DB6, OUTPUT);
+  pinMode(LCD_DB5, OUTPUT);
+  pinMode(LCD_DB4, OUTPUT);
+  pinMode(LCD_DB3, OUTPUT);
+  pinMode(LCD_DB2, OUTPUT);
+  pinMode(LCD_DB1, OUTPUT);
+  pinMode(LCD_DB0, OUTPUT);
+
+  digitalWrite(LCD_K, 0);
+  digitalWrite(LCD_A, 1);
+
+  // attach encoder interrupt
+
+
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
+
+  // Read Pin Inputs
+  speedInput = analogRead(speed_pot_input);
+  transducerInput = analogReadMilliVolts(transducer_input);
+  rotationsinput = analogRead(rotations_pot_input);
+  directionCWInput = digitalRead(direction_switch_cw_input);
+  directionCCWInput = digitalRead(direction_switch_ccw_input);
+
+  /// rotation filtering
+  // reduces the rotation input by a factor of 100 and removes floating point values
+  rotationCount = rotationsinput/100;
+  // Aggressive moving average filter for rotationCount
+  // alpha = 0.9 (aggressive filtering)
+  float alpha = 0.9f;
+  filteredRotationCount = (uint8_t)((alpha * filteredRotationCount) + ((1.0f - alpha) * rotationCount));
+  // Display filteredRotationCount on Serial if it changes
+  if (filteredRotationCount != prevFilteredRotationCount) {
+    Serial.print("Filtered Rotation Count: ");
+    Serial.println(filteredRotationCount);
+    prevFilteredRotationCount = filteredRotationCount;
+  }
+
+  /// speed filtering
+  // reduces the speed input to one of three possibilities
+  speedSetting = speedInput/1365;
+  // Moving average filter for rotationCount
+  // beta = 0.5
+  float beta = 0.5f;
+  filteredSpeed = (uint8_t)((beta * filteredSpeed) + ((1.0f - beta) * speedSetting));  
+  // Only run switch-case if speedSetting has changed
+  if (speedSetting != prevSpeedSetting) {
+    switch (speedSetting) {
+      case 0:
+        // Handle speedSetting == 0
+        speedOutput = 150;
+        Serial.println("Speed setting: 0");
+        break;
+      case 1:
+        // Handle speedSetting == 1
+        speedOutput = 200;
+        Serial.println("Speed setting: 1");
+        break;
+      case 2:
+        // Handle speedSetting == 2
+        speedOutput = 255;
+        Serial.println("Speed setting: 2");
+        break;
+      default:
+        // Should not occur
+        Serial.println("Speed setting: Invalid value");
+        break;
+    }
+    prevSpeedSetting = speedSetting;
+  }
+
+
+
+
+
+
+
 }
 
 // put function definitions here:
 int myFunction(int x, int y) {
   return x + y;
+}
+
+
+
+void startMotor() {
+  if (!onHold) {
+    if (direction){
+      digitalWrite(motor_controller_In1, 1);
+      digitalWrite(motor_controller_In2, 0);
+      analogWrite(motor_controller_EN, speedOutput);
+    } else if (!direction){
+      digitalWrite(motor_controller_In1, 0);
+      digitalWrite(motor_controller_In2, 1);
+      analogWrite(motor_controller_EN, speedOutput);
+    }
+    isMotorRunning = true;
+  }
+}
+
+void stopMotor() {
+  digitalWrite(motor_controller_In1, 0);
+  digitalWrite(motor_controller_In2, 0);
+  analogWrite(motor_controller_EN, 0);
+  isMotorRunning = false;
 }

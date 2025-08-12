@@ -47,10 +47,12 @@ const uint8_t directionTriggerThreshold = 50;
 const uint16_t encoderResolution = 1440;
 uint8_t encoderCount = 0;
 uint16_t encoderCountLimit = 0;
+double calculatedTorque = 0;
+double maxCalculatedTorque = 0;
+double prevMaxCalculatedTorque = 0;
+String speedDisplay = "Slow Speed";
 
 // Store previous speedSetting for change detection
-
-
 uint8_t prevSpeedSetting = 0;
 
 // Filtered rotation count (moving average)
@@ -84,6 +86,8 @@ void spinSetRotations();
 void displayTorque();
 void displaySpeed();
 void displayRotations();
+
+LiquidCrystal lcd(LCD_RS, LCD_RW, LCD_E, LCD_DB0, LCD_DB1, LCD_DB2, LCD_DB3, LCD_DB4, LCD_DB5, LCD_DB6, LCD_DB7);
 
 void setup() {
 
@@ -119,6 +123,9 @@ void setup() {
   // Attach interrupt to encoder_a_input pin
   attachInterrupt(digitalPinToInterrupt(encoder_a_input), encoderISR, RISING);
 
+  // lcd init
+  lcd.begin(16,2);
+
 }
 
 void loop() {
@@ -140,8 +147,7 @@ void loop() {
   filteredRotationCount = (uint8_t)((alpha * filteredRotationCount) + ((1.0f - alpha) * rotationCount));
   // Display filteredRotationCount on Serial if it changes
   if (filteredRotationCount != prevFilteredRotationCount) {
-    Serial.print("Filtered Rotation Count: ");
-    Serial.println(filteredRotationCount);
+    displayRotations();
     prevFilteredRotationCount = filteredRotationCount;
   }
 
@@ -158,17 +164,20 @@ void loop() {
       case 0:
         // Handle speedSetting == 0
         speedOutput = 150;
-        Serial.println("Speed setting: 0");
+        speedDisplay = "Slow Speed";
+        displaySpeed();
         break;
       case 1:
         // Handle speedSetting == 1
         speedOutput = 200;
-        Serial.println("Speed setting: 1");
+        speedDisplay = "Middle Speed";
+        displaySpeed();
         break;
       case 2:
         // Handle speedSetting == 2
         speedOutput = 255;
-        Serial.println("Speed setting: 2");
+        speedDisplay = "Fast Speed";
+        displaySpeed();
         break;
       default:
         // Should not occur
@@ -261,12 +270,43 @@ void spinSetRotations() {
     startMotor();
     encoderCount = 0;
     while(encoderCount < encoderCountLimit) {
-      //displayTorque();
+      displayTorque();
     }
     stopMotor();
   }
 }
 
+void displayTorque() {
+  transducerInput = analogReadMilliVolts(transducer_input);
+  Serial.println(transducer_input);
+  // Torque calculation
+  if (calculatedTorque > maxCalculatedTorque){
+    maxCalculatedTorque = calculatedTorque;
+  }
+  if (maxCalculatedTorque != prevMaxCalculatedTorque){ 
+    lcd.clear();
+    lcd.println("Max torque: ");
+    lcd.print(maxCalculatedTorque);
+    lcd.print(" oz-in");
+    prevMaxCalculatedTorque = maxCalculatedTorque;
+    delay(5);
+  }
+}
 
+void displayRotations() {
+  Serial.print("Rotations Set: ");
+  Serial.println(filteredRotationCount);
+  lcd.clear();
+  lcd.println("Rotations Set: ");
+  lcd.print(filteredRotationCount);
+  delay(5);
+}
+
+void displaySpeed() {
+  Serial.println(speedDisplay);
+  lcd.clear();
+  lcd.print(speedDisplay);
+  delay(5);
+}
 
 

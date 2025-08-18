@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <LiquidCrystal.h>
 
-
 /// Pin Definitions
 // order based on physical pin location on esp32
 // left side of the board
@@ -37,60 +36,48 @@ const uint8_t LCD_DB0 = 15;
 bool isMotorRunning = false;
 bool direction = true;
 bool onHold = true;
-uint16_t speedInput = 0;
+bool directionCWInput = 0;
+bool directionCCWInput = 0;
+const uint8_t directionTriggerThreshold = 30;
+const uint16_t encoderResolution = 1440;
 uint8_t speedOutput = 0;
 uint8_t rotationCount = 0;
 uint8_t speedSetting = 0;
 uint8_t cwTriggerCount = 0;
 uint8_t ccwTriggerCount = 0;
-const uint8_t directionTriggerThreshold = 50;
-const uint16_t encoderResolution = 1440;
 uint8_t encoderCount = 0;
+uint8_t prevSpeedSetting = 0;
+uint8_t filteredRotationCount = 0;
+uint8_t filteredSpeed = 0;
+uint8_t prevFilteredRotationCount = 0;
+uint16_t speedInput = 0;
 uint16_t encoderCountLimit = 0;
+uint16_t transducerInput = 0;
+uint16_t rotationsinput = 0;
+uint32_t currentTime = 0;
+uint32_t timeOfLastSwitchOff = 0;
 double calculatedTorque = 0;
 double maxCalculatedTorque = 0;
 double prevMaxCalculatedTorque = 0;
 String speedDisplay = "Slow Speed";
-
-// Store previous speedSetting for change detection
-uint8_t prevSpeedSetting = 0;
-
-// Filtered rotation count (moving average)
-uint8_t filteredRotationCount = 0;
-
-// Filtered speed setting (moving average)
-uint8_t filteredSpeed = 0;
-
-// Store previous filtered value for change detection
-uint8_t prevFilteredRotationCount = 0;
-
-// Added variables for sensor inputs
-uint16_t transducerInput = 0;
-uint16_t rotationsinput = 0;
-bool directionCWInput = 0;
-bool directionCCWInput = 0;
-
-
 
 // Encoder interrupt service routine
 void IRAM_ATTR encoderISR() {
   encoderCount++;
 }
 
-
-// put function declarations here:
+// Function Declarations:
 void startMotor();
 void stopMotor();
-
 void spinSetRotations();
 void displayTorque();
 void displaySpeed();
 void displayRotations();
 
+// LCD object creation
 LiquidCrystal lcd(LCD_RS, LCD_RW, LCD_E, LCD_DB0, LCD_DB1, LCD_DB2, LCD_DB3, LCD_DB4, LCD_DB5, LCD_DB6, LCD_DB7);
 
 void setup() {
-
   // put your setup code here, to run once:
   // Pin Mode Definitions
   pinMode(speed_pot_input, INPUT);
@@ -101,11 +88,11 @@ void setup() {
   pinMode(LCD_E, OUTPUT);
   pinMode(LCD_RW, OUTPUT);
   pinMode(LCD_RS, OUTPUT);
-  pinMode(transducer_input, INPUT_PULLDOWN);
+  pinMode(transducer_input, INPUT);
   pinMode(rotations_pot_input, INPUT);
-  pinMode(direction_switch_cw_input, INPUT_PULLDOWN);
-  pinMode(direction_switch_ccw_input, INPUT_PULLDOWN);
-  pinMode(LCD_K, OUTPUT);
+  pinMode(direction_switch_cw_input, INPUT);
+  pinMode(direction_switch_ccw_input, INPUT);
+  //pinMode(LCD_K, OUTPUT);
   pinMode(encoder_b_input, INPUT);
   pinMode(LCD_A, OUTPUT);
   pinMode(LCD_DB7, OUTPUT);
@@ -117,11 +104,16 @@ void setup() {
   pinMode(LCD_DB1, OUTPUT);
   pinMode(LCD_DB0, OUTPUT);
 
-  digitalWrite(LCD_K, 0);
+  //digitalWrite(LCD_K, 0);
   digitalWrite(LCD_A, 1);
 
   // Attach interrupt to encoder_a_input pin
   attachInterrupt(digitalPinToInterrupt(encoder_a_input), encoderISR, RISING);
+
+  // Start Serial Communication
+  Serial.begin(9600);
+  delay(100);
+  Serial.println("Serial Started");
 
   // lcd init
   lcd.begin(16,2);
@@ -129,7 +121,6 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
 
   // Read Pin Inputs
   speedInput = analogRead(speed_pot_input);
@@ -138,12 +129,22 @@ void loop() {
   directionCWInput = digitalRead(direction_switch_cw_input);
   directionCCWInput = digitalRead(direction_switch_ccw_input);
 
-  /// rotation filtering
-  // reduces the rotation input by a factor of 100 and removes floating point values
-  rotationCount = rotationsinput/100;
-  // Aggressive moving average filter for rotationCount
-  // alpha = 0.9 (aggressive filtering)
-  float alpha = 0.9f;
+  // get current time
+  currentTime = millis();
+
+
+  // turn off hold
+  if (!directionCWInput && !directionCCWInput){
+    //Serial.println("Not On Hold");
+    onHold = false;
+  }
+
+  /// ROTATION FILTERING
+  // reduces the rotation input by a factor of 99 and removes floating point values
+  rotationCount = rotationsinput/99;
+  // Moving average filter for rotationCount
+  // alpha = 0.3
+  float alpha = 0.3f;
   filteredRotationCount = (uint8_t)((alpha * filteredRotationCount) + ((1.0f - alpha) * rotationCount));
   // Display filteredRotationCount on Serial if it changes
   if (filteredRotationCount != prevFilteredRotationCount) {
@@ -151,7 +152,7 @@ void loop() {
     prevFilteredRotationCount = filteredRotationCount;
   }
 
-  /// speed filtering
+  /// SPEED FILTERING
   // reduces the speed input to one of three possibilities
   speedSetting = speedInput/1370;
   // Moving average filter for rotationCount
@@ -190,23 +191,24 @@ void loop() {
 
   if (filteredRotationCount == 0){
     // manual mode
+    Serial.println("Manual Mode");
   } else {
-
+    //Serial.println(onHold);
     if (!onHold) {
-
+      //Serial.println("Rotation Mode, Not on Hold");
       // check if in no direction position
-      if (!direction_switch_cw_input && !direction_switch_ccw_input) {
+      if (!directionCWInput && !directionCCWInput) {
         // reset direction trigger count
         cwTriggerCount = 0;
         ccwTriggerCount = 0;
-      } else if (direction_switch_cw_input && !direction_switch_ccw_input) {
+      } else if (directionCWInput && !directionCCWInput) {
         // increment cw trigger count
         // reset ccw trigger count
         // set direction to true
         cwTriggerCount++;
         ccwTriggerCount = 0;
         direction = true;
-      } else if (!direction_switch_cw_input && direction_switch_ccw_input) {
+      } else if (!directionCWInput && directionCCWInput) {
         // increment ccw trigger count
         // reset cw trigger count
         // set direction to false
@@ -214,11 +216,11 @@ void loop() {
         cwTriggerCount = 0;
         direction = false;
       }
-
       // if a direction trigger counter has passed the threshold, start the motor
       if ((cwTriggerCount >= directionTriggerThreshold) || (ccwTriggerCount >= directionTriggerThreshold)) {
         // move the motor the set number of rotations
         // set motor to on hold so it cannot move again until this move is completed
+        Serial.println("starting to spin set number of rotations");
         spinSetRotations();
         onHold = true;
       }
@@ -227,19 +229,9 @@ void loop() {
 
 
 
-
-
-
-
-
-
-
 }
 
-// put function definitions here:
-
-
-
+// Function Definitions
 
 void startMotor() {
   if (!onHold) {
@@ -263,7 +255,6 @@ void stopMotor() {
   isMotorRunning = false;
 }
 
-
 void spinSetRotations() {
   if (!onHold) {
     encoderCountLimit = filteredRotationCount*encoderResolution;
@@ -278,7 +269,7 @@ void spinSetRotations() {
 
 void displayTorque() {
   transducerInput = analogReadMilliVolts(transducer_input);
-  Serial.println(transducer_input);
+  Serial.println(transducerInput);
   // Torque calculation
   if (calculatedTorque > maxCalculatedTorque){
     maxCalculatedTorque = calculatedTorque;
@@ -297,7 +288,7 @@ void displayRotations() {
   Serial.print("Rotations Set: ");
   Serial.println(filteredRotationCount);
   lcd.clear();
-  lcd.println("Rotations Set: ");
+  lcd.print("Rotations: ");
   lcd.print(filteredRotationCount);
   delay(5);
 }

@@ -45,7 +45,7 @@ uint8_t rotationCount = 0;
 uint8_t speedSetting = 0;
 uint8_t cwTriggerCount = 0;
 uint8_t ccwTriggerCount = 0;
-uint8_t encoderCount = 0;
+uint16_t encoderCount = 0;
 uint8_t prevSpeedSetting = 0;
 uint8_t filteredRotationCount = 0;
 uint8_t filteredSpeed = 0;
@@ -164,19 +164,19 @@ void loop() {
     switch (speedSetting) {
       case 0:
         // Handle speedSetting == 0
-        speedOutput = 150;
+        speedOutput = 100;
         speedDisplay = "Slow Speed";
         displaySpeed();
         break;
       case 1:
         // Handle speedSetting == 1
-        speedOutput = 200;
+        speedOutput = 150;
         speedDisplay = "Middle Speed";
         displaySpeed();
         break;
       case 2:
         // Handle speedSetting == 2
-        speedOutput = 255;
+        speedOutput = 200;
         speedDisplay = "Fast Speed";
         displaySpeed();
         break;
@@ -260,8 +260,10 @@ void spinSetRotations() {
     encoderCountLimit = filteredRotationCount*encoderResolution;
     startMotor();
     encoderCount = 0;
+    //Serial.println(encoderCountLimit);
     while(encoderCount < encoderCountLimit) {
       displayTorque();
+      //Serial.println(encoderCount);
     }
     stopMotor();
   }

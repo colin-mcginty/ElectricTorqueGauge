@@ -164,19 +164,19 @@ void loop() {
     switch (speedSetting) {
       case 0:
         // Handle speedSetting == 0
-        speedOutput = 100;
+        speedOutput = 150;
         speedDisplay = "Slow Speed";
         displaySpeed();
         break;
       case 1:
         // Handle speedSetting == 1
-        speedOutput = 150;
+        speedOutput = 200;
         speedDisplay = "Middle Speed";
         displaySpeed();
         break;
       case 2:
         // Handle speedSetting == 2
-        speedOutput = 200;
+        speedOutput = 250;
         speedDisplay = "Fast Speed";
         displaySpeed();
         break;

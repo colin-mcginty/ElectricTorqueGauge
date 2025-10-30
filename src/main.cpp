@@ -191,7 +191,7 @@ void loop() {
 
   if (filteredRotationCount == 0){
     // manual mode
-    Serial.println("Manual Mode");
+    //Serial.println("Manual Mode");
   } else {
     //Serial.println(onHold);
     if (!onHold) {
@@ -220,7 +220,6 @@ void loop() {
       if ((cwTriggerCount >= directionTriggerThreshold) || (ccwTriggerCount >= directionTriggerThreshold)) {
         // move the motor the set number of rotations
         // set motor to on hold so it cannot move again until this move is completed
-        Serial.println("starting to spin set number of rotations");
         spinSetRotations();
         onHold = true;
       }
@@ -257,6 +256,27 @@ void stopMotor() {
 
 void spinSetRotations() {
   if (!onHold) {
+    // Data Heading
+    Serial.println("=== BEGIN SESSION ===");
+
+    Serial.print("Spins: ");
+    Serial.println(filteredRotationCount);
+
+    Serial.print("Speed: ");
+    Serial.println(speedDisplay);
+
+    Serial.print("Direction: ");
+    if (direction){
+      Serial.println("Forwards");
+    } else if (!direction){
+      Serial.println("Reverse");
+    }
+
+    Serial.print("Start Time: ");
+    Serial.println(millis());
+    
+    // End of Data Heading
+
     encoderCountLimit = filteredRotationCount*encoderResolution;
     startMotor();
     encoderCount = 0;
@@ -266,13 +286,19 @@ void spinSetRotations() {
       //Serial.println(encoderCount);
     }
     stopMotor();
+
+    // Data end Flag
+    Serial.print("End Time: ");
+    Serial.println(millis());
+    Serial.println("=== END SESSION ===");
   }
 }
 
 void displayTorque() {
   transducerInput = analogReadMilliVolts(transducer_input);
   Serial.println(transducerInput);
-  // Torque calculation
+  // Torque calculation // currently not calculating torque in code, instead
+  // analyzing the raw data externally, so just Serial print raw millivolt data
   if (calculatedTorque > maxCalculatedTorque){
     maxCalculatedTorque = calculatedTorque;
   }
@@ -287,8 +313,8 @@ void displayTorque() {
 }
 
 void displayRotations() {
-  Serial.print("Rotations Set: ");
-  Serial.println(filteredRotationCount);
+  //Serial.print("Rotations Set: ");
+  //Serial.println(filteredRotationCount);
   lcd.clear();
   lcd.print("Rotations: ");
   lcd.print(filteredRotationCount);
@@ -296,7 +322,7 @@ void displayRotations() {
 }
 
 void displaySpeed() {
-  Serial.println(speedDisplay);
+  //Serial.println(speedDisplay);
   lcd.clear();
   lcd.print(speedDisplay);
   delay(5);
